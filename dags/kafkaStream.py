@@ -1,58 +1,57 @@
-# Import necessary modules from Airflow to create a DAG and task
-import json
-import requests
+from datetime import datetime
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime
-from kafka import KafkaProducer
-import time 
-import logging 
 
-# Define a Python function to perform as a task in our DAG
-def fetch_data():
+default_args = {
+    'owner': 'airflow',
+    'start_date': datetime(2023, 8, 30, 10, 00),
+}
 
-    res = requests.get('https://randomuser.me/api/')
+
+def get_data():
+    import requests
+    res = requests.get("https://randomuser.me/api/")
     res = res.json()
     res = res['results'][0]
-    return res 
+    return res
+
 
 def format_data(res):
     data = {}
-    location = res['location']
-    data['first_name'] = res['name']['first']
-    data['last_name'] = res['name']['last']
-    data['gender'] = res['gender']
-    data['address'] = f"{str(location['street']['number'])} {location['street']['name']}, {location['city']}, {location['state']}, {location['country']}"
-    data['postcode'] = location['postcode']
-    data['email'] = res['email']
-    data['username'] = res['login']['username']
-    data['dob'] = res['dob']['date']
-    data['registered_date'] = res['registered']['date']
-    data['phone'] = res['phone']
-    data['picture'] = res['picture']['medium']
-
+    location = res["location"]
+    data["first_name"] = res["name"]["first"]
+    data["last_name"] = res["name"]["last"]
+    data["gender"] = res['gender']
+    data["address"] = str(location["street"]["number"]) + " " + location["street"]["name"] + ", " + location[
+        "city"] + ", " + location["state"] + ", " + location["country"]
+    data["postcode"] = res["location"]["postcode"]
+    data["email"] = res["email"]
+    data["username"] = res["login"]["username"]
+    data["dob"] = res["dob"]["date"]
+    data["registered"] = res["registered"]["date"]
+    data["phone"] = res["phone"]
+    data["picture"] = res["picture"]["medium"]
     return data
-    
-default_args = {
-    'owner': 'airflow',
-    'start_date': datetime(2024, 1, 1, 20, 00),
-}
+
 
 def stream_data():
+    import json
+    from kafka import KafkaProducer
+    import logging
+    import time
 
-    producer = KafkaProducer(bootstrap_servers=['localhost:9092'], max_block_ms = 5000)
-    
     curr_time = time.time()
 
     producer = KafkaProducer(bootstrap_servers=["broker:29092"],
-                             max_block_ms=5000) 
+                             max_block_ms=5000)  # set a timeout
 
     while True:
         if time.time() > curr_time + 60:
             break
         try:
-            data = format_data(fetch_data())
-            print(json.dumps(data, indent=5))
+            data = format_data(get_data())
+            print(json.dumps(data, indent=4))
 
             producer.send("users_created", json.dumps(data).encode("utf-8"))
 
